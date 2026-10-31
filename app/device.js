@@ -1,14 +1,34 @@
-/* Public Tizen application APIs. No Mac server, network address or credentials. */
+/* Public Tizen and Android/FireOS application APIs. No Mac server, network address or credentials. */
 (function () {
   'use strict';
-  var IDS = {
+  var TIZEN_IDS = {
     stremio: 'IkWsFHtOY9.Stremio', netflix: 'org.tizen.netflix-app',
     disneyplus: 'MCmYXNxgcu.DisneyPlus', youtube: '9Ur5IzDKqV.TizenYouTube',
     appletv: 'com.samsung.tv.aria-video', primevideo: 'org.tizen.primevideo',
     abciview: 'mWK87Xghap.ABCiview', sbs: 'OyE7OuxlUi.SBSOnDemand',
     applemusic: 'org.tizen.apple.apple-music'
   };
-  var STREAMING = ['as6cYRgkPy.Binge', '73iTZRTc34.Stan', '5b8c3eb16b.BeamCTVDev',
+  var ANDROID_IDS = {
+    stremio: 'com.stremio.one',
+    netflix: 'com.netflix.ninja',
+    disneyplus: 'com.disney.disneyplus',
+    youtube: 'com.amazon.firetv.youtube',
+    appletv: 'com.apple.atve.amazon.appletv',
+    primevideo: 'com.amazon.amazonvideo.livingroom',
+    spotify: 'com.spotify.tv.android',
+    twitch: 'tv.twitch.android.app',
+    kodi: 'org.xbmc.kodi',
+    plex: 'com.plexapp.android'
+  };
+  var TIZEN_TO_ANDROID = {
+    'IkWsFHtOY9.Stremio': 'com.stremio.one',
+    'org.tizen.netflix-app': 'com.netflix.ninja',
+    'MCmYXNxgcu.DisneyPlus': 'com.disney.disneyplus',
+    '9Ur5IzDKqV.TizenYouTube': 'com.amazon.firetv.youtube',
+    'com.samsung.tv.aria-video': 'com.apple.atve.amazon.appletv',
+    'org.tizen.primevideo': 'com.amazon.amazonvideo.livingroom'
+  };
+  var TIZEN_STREAMING = ['as6cYRgkPy.Binge', '73iTZRTc34.Stan', '5b8c3eb16b.BeamCTVDev',
     'cj37Ni3qXM.HBONow', 'LBUAQX1exg.Hulu', 'gzcc4LRFBF.Peacock', 'rJyOSqC6Up.CBSAllAccess',
     'Rk72oKFsRS.OtterKidsProd', '70fRFUwYlD.OtterGAProd', 'PvWgqxV3Xa.YouTubeTV',
     'XtU8fQk2gN.ESPN', 'ZmmGjO6VKO.slingtv', 'VtuWAiZdHN.STARZPlay', 'ckfgqqzvt0.dplus',
@@ -21,9 +41,15 @@
     'd0m1lV1nt2.emanual', '2022ePop01.SmartTV',
     'ZODRT12q2l.WebAccountExtension', 'ByJlgt0XeD.CastSettingsApp', 'tv6pbVMQFF.PrivacyChoices'];
   var SELF = 'nClrkHome1.FrameHome';
-  function api() { return window.tizen && window.tizen.application; }
+
+  function fireBridge() {
+    return window.FireBridge || window.AndroidBridge;
+  }
+  function tizenApi() {
+    return window.tizen && window.tizen.application;
+  }
   function selfId() {
-    try { return api().getCurrentApplication().appInfo.id || SELF; }
+    try { return tizenApi().getCurrentApplication().appInfo.id || SELF; }
     catch (err) { return SELF; }
   }
   function unavailable(done) {
@@ -37,48 +63,130 @@
     function finish(err, value) { if (finished) return; finished = true; clearTimeout(timer); done(err, value); }
     return finish;
   }
+
   function launchApp(id, done) {
-    if (!api()) { unavailable(done); return; }
-    var finish = bounded(done);
-    try { api().launch(id, function () { finish(null); }, function (err) { finish(failure(err)); }); }
+    var bridge = fireBridge(), targetId = id, finish;
+    if (bridge) {
+      if (TIZEN_TO_ANDROID[targetId]) targetId = TIZEN_TO_ANDROID[targetId];
+      if (ANDROID_IDS[targetId]) targetId = ANDROID_IDS[targetId];
+      try {
+        var ok = bridge.launchApp(targetId);
+        if (ok) { done(null); }
+        else { done({ message: 'App could not be launched.', detail: 'Package ' + targetId + ' is not installed or refused to start.' }); }
+      } catch (err) { done(failure(err)); }
+      return;
+    }
+
+    if (!tizenApi()) { unavailable(done); return; }
+    finish = bounded(done);
+    try { tizenApi().launch(id, function () { finish(null); }, function (err) { finish(failure(err)); }); }
     catch (err) { finish(failure(err)); }
   }
+
   function launch(brand, done) {
-    if (!IDS[brand]) { done({message: 'This app has no launch target.'}); return; }
-    launchApp(IDS[brand], done);
+    var bridge = fireBridge();
+    if (bridge && ANDROID_IDS[brand]) {
+      launchApp(ANDROID_IDS[brand], done);
+      return;
+    }
+    if (!TIZEN_IDS[brand]) { done({message: 'This app has no launch target.'}); return; }
+    launchApp(TIZEN_IDS[brand], done);
   }
+
   function art(done) {
-    if (!api()) { unavailable(done); return; }
+    var bridge = fireBridge();
+    if (bridge) {
+      try {
+        if (typeof bridge.openScreensaver === 'function') {
+          bridge.openScreensaver();
+          done(null);
+          return;
+        }
+      } catch (err) { done(failure(err)); return; }
+    }
+
+    if (!tizenApi()) { unavailable(done); return; }
     var finish = bounded(done);
     try {
       var data = [new tizen.ApplicationControlData('mode', ['fullscreen']), new tizen.ApplicationControlData('requester', ['mobile'])];
       var control = new tizen.ApplicationControl('http://tizen.org/appcontrol/operation/default', null, null, null, data);
-      api().launchAppControl(control, 'org.tizen.art-app', function () { finish(null); }, function (err) { finish(failure(err)); });
+      tizenApi().launchAppControl(control, 'org.tizen.art-app', function () { finish(null); }, function (err) { finish(failure(err)); });
     } catch (err) { finish(failure(err)); }
   }
-  function home(done) { launchApp('com.samsung.tv.csfs', done); }
-  function settings(done) { launchApp('com.samsung.tv.coba.setting', done); }
+
+  function home(done) {
+    var bridge = fireBridge();
+    if (bridge) {
+      try {
+        if (typeof bridge.openNativeHome === 'function') {
+          bridge.openNativeHome();
+          done(null);
+          return;
+        }
+      } catch (err) { done(failure(err)); return; }
+    }
+    launchApp('com.samsung.tv.csfs', done);
+  }
+
+  function settings(done) {
+    var bridge = fireBridge();
+    if (bridge) {
+      try {
+        if (typeof bridge.openSettings === 'function') {
+          bridge.openSettings();
+          done(null);
+          return;
+        }
+      } catch (err) { done(failure(err)); return; }
+    }
+    launchApp('com.samsung.tv.coba.setting', done);
+  }
+
   function apps(done) {
-    if (!api()) { unavailable(done); return; }
+    var bridge = fireBridge();
+    if (bridge) {
+      try {
+        var raw = bridge.getInstalledApps(), parsed = JSON.parse(raw || '[]'), res = [];
+        var knownAndroid = {};
+        Object.keys(ANDROID_IDS).forEach(function (brand) { knownAndroid[ANDROID_IDS[brand]] = brand; });
+        parsed.forEach(function (item) {
+          if (!item.packageName || !item.name) return;
+          var brand = knownAndroid[item.packageName] || '';
+          res.push({
+            appId: item.packageName,
+            name: item.name,
+            brand: brand,
+            icon: item.icon || '',
+            rank: brand ? Object.keys(ANDROID_IDS).indexOf(brand) : 50
+          });
+        });
+        res.sort(function (a, b) { return a.rank - b.rank || a.name.toLowerCase().localeCompare(b.name.toLowerCase()); });
+        done(null, res);
+      } catch (err) { done(failure(err)); }
+      return;
+    }
+
+    if (!tizenApi()) { unavailable(done); return; }
     // Large installed catalogues can take longer than a launch response.
     var finish = bounded(done, 20000);
     try {
-      api().getAppsInfo(function (list) {
+      tizenApi().getAppsInfo(function (list) {
         var known = {}, seen = {}, result = [], self = selfId();
-        Object.keys(IDS).forEach(function (brand) { known[IDS[brand]] = brand; });
+        Object.keys(TIZEN_IDS).forEach(function (brand) { known[TIZEN_IDS[brand]] = brand; });
         list.forEach(function (a) {
-          var primary = !!known[a.id], stream = STREAMING.indexOf(a.id) >= 0;
+          var primary = !!known[a.id], stream = TIZEN_STREAMING.indexOf(a.id) >= 0;
           var consumer = /^[A-Za-z0-9]{10}\.[A-Za-z0-9_-]+$/.test(a.id) || CONSUMER_SYSTEM.indexOf(a.id) >= 0;
           if (a.id === self || INTERNAL.indexOf(a.id) >= 0 || seen[a.id] || !a.name || (!primary && !stream && (!a.show || !consumer))) return;
           if (!primary && /(?:service|worker|preview|promotion|plugin|launcher|test|sdk|^ep[ -]|factory|daemon)/i.test(a.name + ' ' + a.id)) return;
           if (/-dummy$/.test(a.id) || a.id === 'com.samsung.tv.cobalt-yt') return;
           seen[a.id] = true;
-          result.push({ appId: a.id, name: a.name, brand: known[a.id] || EXTRA_BRANDS[a.id] || '', icon: a.iconPath || '', rank: primary ? Object.keys(IDS).indexOf(known[a.id]) : (stream ? 20 : 30) });
+          result.push({ appId: a.id, name: a.name, brand: known[a.id] || EXTRA_BRANDS[a.id] || '', icon: a.iconPath || '', rank: primary ? Object.keys(TIZEN_IDS).indexOf(known[a.id]) : (stream ? 20 : 30) });
         });
         result.sort(function (a, b) { return a.rank - b.rank || a.name.toLowerCase().localeCompare(b.name.toLowerCase()); });
         finish(null, result);
       }, function (err) { finish(failure(err)); });
     } catch (err) { finish(failure(err)); }
   }
+
   window.FrameDevice = { launch: launch, launchApp: launchApp, art: art, home: home, settings: settings, apps: apps };
 }());
