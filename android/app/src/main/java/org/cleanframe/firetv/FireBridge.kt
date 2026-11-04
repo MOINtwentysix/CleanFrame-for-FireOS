@@ -95,6 +95,13 @@ class FireBridge(private val context: Context) {
     @JavascriptInterface
     fun openSettings(): Boolean {
         return try {
+            val pm = context.packageManager
+            val amazonSettingsIntent = pm.getLaunchIntentForPackage("com.amazon.tv.settings")
+            if (amazonSettingsIntent != null) {
+                amazonSettingsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(amazonSettingsIntent)
+                return true
+            }
             val intent = Intent(Settings.ACTION_SETTINGS).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
@@ -133,10 +140,33 @@ class FireBridge(private val context: Context) {
     @JavascriptInterface
     fun openNativeHome(): Boolean {
         return try {
+            val pm = context.packageManager
+            // 1. Try launching the stock Amazon Fire TV launcher directly
+            val stockIntent = pm.getLeanbackLaunchIntentForPackage("com.amazon.tv.launcher")
+                ?: pm.getLaunchIntentForPackage("com.amazon.tv.launcher")
+            if (stockIntent != null) {
+                stockIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(stockIntent)
+                return true
+            }
+            // 2. Query HOME activities and pick a launcher that is not our own package
             val homeIntent = Intent(Intent.ACTION_MAIN).apply {
                 addCategory(Intent.CATEGORY_HOME)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
+            val resolveList = pm.queryIntentActivities(homeIntent, 0)
+            for (ri in resolveList) {
+                if (ri.activityInfo.packageName != context.packageName) {
+                    val explicitHome = Intent(Intent.ACTION_MAIN).apply {
+                        setClassName(ri.activityInfo.packageName, ri.activityInfo.name)
+                        addCategory(Intent.CATEGORY_HOME)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(explicitHome)
+                    return true
+                }
+            }
+            // 3. Fallback to standard HOME intent
             context.startActivity(homeIntent)
             true
         } catch (e: Exception) {

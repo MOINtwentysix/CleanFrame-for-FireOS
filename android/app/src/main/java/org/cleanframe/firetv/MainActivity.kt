@@ -8,6 +8,8 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
+import android.webkit.ConsoleMessage
+import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -41,12 +43,28 @@ class MainActivity : AppCompatActivity() {
                 loadsImagesAutomatically = true
                 mediaPlaybackRequiresUserGesture = false
                 cacheMode = WebSettings.LOAD_DEFAULT
+                useWideViewPort = true
+                loadWithOverviewMode = true
+                textZoom = 100
+                supportZoom = false
+                builtInZoomControls = false
+                displayZoomControls = false
+            }
+
+            webChromeClient = object : WebChromeClient() {
+                override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+                    consoleMessage?.let {
+                        android.util.Log.d("CleanFrameJS", "${it.message()} -- From line ${it.lineNumber()} of ${it.sourceId()}")
+                    }
+                    return true
+                }
             }
 
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     view?.requestFocus()
+                    triggerResize()
                 }
             }
 
@@ -59,49 +77,58 @@ class MainActivity : AppCompatActivity() {
         webView.loadUrl("file:///android_asset/index.html")
     }
 
+    private fun triggerResize() {
+        webView.evaluateJavascript(
+            "(function() { if (typeof window.dispatchEvent === 'function') { window.dispatchEvent(new Event('resize')); } })();",
+            null
+        )
+    }
+
     override fun onResume() {
         super.onResume()
         hideSystemUI()
         webView.requestFocus()
+        triggerResize()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
             hideSystemUI()
+            triggerResize()
         }
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        // Forward BACK key to WebView as Escape keydown so CleanFrame's internal panel navigation handles it
+        // Forward BACK key to WebView as Escape keydown/keyup so CleanFrame's internal panel navigation handles it
         if (event.keyCode == KeyEvent.KEYCODE_BACK) {
-            if (event.action == KeyEvent.ACTION_DOWN) {
-                webView.evaluateJavascript(
-                    """
-                    (function() {
-                        var ev = new KeyboardEvent('keydown', {
-                            key: 'Escape',
-                            code: 'Escape',
-                            keyCode: 27,
-                            which: 27,
-                            bubbles: true,
-                            cancelable: true
-                        });
-                        window.dispatchEvent(ev);
-                    })();
-                    """.trimIndent(),
-                    null
-                )
-            }
-            return true
-        }
-
-        // Handle D-pad Center key as Enter if needed
-        if (event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER && event.action == KeyEvent.ACTION_DOWN) {
+            val type = if (event.action == KeyEvent.ACTION_DOWN) "keydown" else "keyup"
             webView.evaluateJavascript(
                 """
                 (function() {
-                    var ev = new KeyboardEvent('keydown', {
+                    var ev = new KeyboardEvent('$type', {
+                        key: 'Escape',
+                        code: 'Escape',
+                        keyCode: 27,
+                        which: 27,
+                        bubbles: true,
+                        cancelable: true
+                    });
+                    document.dispatchEvent(ev);
+                })();
+                """.trimIndent(),
+                null
+            )
+            return true
+        }
+
+        // Handle D-pad Center key as Enter
+        if (event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
+            val type = if (event.action == KeyEvent.ACTION_DOWN) "keydown" else "keyup"
+            webView.evaluateJavascript(
+                """
+                (function() {
+                    var ev = new KeyboardEvent('$type', {
                         key: 'Enter',
                         code: 'Enter',
                         keyCode: 13,
@@ -109,7 +136,7 @@ class MainActivity : AppCompatActivity() {
                         bubbles: true,
                         cancelable: true
                     });
-                    window.dispatchEvent(ev);
+                    document.dispatchEvent(ev);
                 })();
                 """.trimIndent(),
                 null
