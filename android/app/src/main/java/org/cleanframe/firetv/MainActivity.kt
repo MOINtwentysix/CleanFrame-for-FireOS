@@ -46,7 +46,7 @@ class MainActivity : AppCompatActivity() {
                 useWideViewPort = true
                 loadWithOverviewMode = true
                 textZoom = 100
-                supportZoom = false
+                setSupportZoom(false)
                 builtInZoomControls = false
                 displayZoomControls = false
             }

@@ -7,11 +7,11 @@ echo.
 where gradle >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     echo [INFO] System Gradle found. Starting build...
-    call gradle assembleDebug
+    call gradle assembleRelease
     if %ERRORLEVEL% EQU 0 (
         echo.
         echo [SUCCESS] APK built successfully!
-        echo Location: app\build\outputs\apk\debug\app-debug.apk
+        echo Location: app\build\outputs\apk\release\app-release.apk
     ) else (
         echo.
         echo [ERROR] Build failed. See output above.
